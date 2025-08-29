@@ -45,6 +45,21 @@ function addGalleryItem(data) {
     badge.className = "absolute top-0 right-0 w-6 h-6 block cursor-pointer";
     galleryItem.appendChild(badge);
 
+    // Add download button
+    const downloadBtn = document.createElement('button');
+    downloadBtn.innerHTML = `
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-4-4m4 4l4-4m5-5V4a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-1"></path>
+        </svg>
+    `;
+    downloadBtn.className = "absolute bottom-2 right-2 bg-white bg-opacity-90 hover:bg-opacity-100 text-gray-700 p-1.5 rounded-full shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer";
+    downloadBtn.title = "Download signed image";
+    downloadBtn.onclick = (e) => {
+        e.stopPropagation();
+        downloadImage(data.url, data.name);
+    };
+    galleryItem.appendChild(downloadBtn);
+
     gallery.appendChild(galleryItem);
 
     // add popup event listeners
@@ -294,6 +309,39 @@ function createVerificationCard(data) {
                             <dd class="text-sm text-gray-900">${details?.ingredients?.length || 0} ingredient(s)</dd>
                         </div>
                     </dl>
+                    
+                    <!-- Download Section -->
+                    <div class="mt-4 pt-4 border-t ${isValid ? 'border-green-200' : 'border-red-200'}">
+                        <div class="flex space-x-3">
+                            <button onclick="downloadImage('${data.url}', '${data.name}')" 
+                                class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md ${isValid ? 'text-green-700 bg-green-100 hover:bg-green-200' : 'text-red-700 bg-red-100 hover:bg-red-200'} focus:outline-none focus:ring-2 focus:ring-offset-2 ${isValid ? 'focus:ring-green-500' : 'focus:ring-red-500'}">
+                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-4-4m4 4l4-4m5-5V4a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-1"></path>
+                                </svg>
+                                Download Image
+                            </button>
+                            
+                            ${data.sidecarUrl ? `
+                                <button onclick="downloadImage('${data.sidecarUrl}', '${data.name}.c2pa')" 
+                                    class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md ${isValid ? 'text-green-700 bg-green-100 hover:bg-green-200' : 'text-red-700 bg-red-100 hover:bg-red-200'} focus:outline-none focus:ring-2 focus:ring-offset-2 ${isValid ? 'focus:ring-green-500' : 'focus:ring-red-500'}">
+                                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                    </svg>
+                                    Download Manifest
+                                </button>
+                            ` : ''}
+                            
+                            ${data.remoteManifestUrl ? `
+                                <button onclick="downloadImage('${data.remoteManifestUrl}', '${data.name}.c2pa')" 
+                                    class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md ${isValid ? 'text-green-700 bg-green-100 hover:bg-green-200' : 'text-red-700 bg-red-100 hover:bg-red-200'} focus:outline-none focus:ring-2 focus:ring-offset-2 ${isValid ? 'focus:ring-green-500' : 'focus:ring-red-500'}">
+                                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                    </svg>
+                                    Download Remote Manifest
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -321,6 +369,20 @@ function toggleDetails(cardId) {
 
 // Make toggleDetails globally available
 window.toggleDetails = toggleDetails;
+
+// Function to download files
+function downloadImage(url, filename) {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Make downloadImage globally available
+window.downloadImage = downloadImage;
 
 // Store processed file for actions
 let processedFile = null;

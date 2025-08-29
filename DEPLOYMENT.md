@@ -8,47 +8,43 @@
 
 ## Deployment Steps
 
+### Quick Setup (Recommended)
+
 1. **Clone the repository**
    ```bash
-   git clone <your-repo-url>
+   git clone https://github.com/contentauth/c2patool-service-example.git
    cd c2patool-service-example
    ```
 
-2. **Install dependencies**
+2. **Run the setup script**
    ```bash
-   npm install
+   ./setup-server.sh
    ```
 
-3. **Configure environment variables**
+The script will automatically:
+- Install dependencies
+- Create .env with your VPS IP (91.98.126.109)
+- Set c2patool permissions
+- Start PM2 service
+- Configure nginx (if sudo available)
+- Test the deployment
+
+### Manual Setup (Alternative)
+
+1. **Install dependencies**
+   ```bash
+   npm install --production
+   ```
+
+2. **Configure environment variables**
    ```bash
    cp .env.example .env
-   ```
-   
-   Edit `.env` file with your VPS settings:
-   ```env
-   PORT=8000
-   HOST=your-vps-domain.com
+   sed -i "s/HOST=localhost/HOST=91.98.126.109/" .env
    ```
 
-4. **Ensure c2patool binary has correct permissions**
+3. **Set permissions and start service**
    ```bash
    chmod +x c2patool
-   ```
-
-5. **Test the application**
-   ```bash
-   npm run start:prod
-   ```
-
-6. **Set up process manager (recommended)**
-   
-   Install PM2:
-   ```bash
-   npm install -g pm2
-   ```
-   
-   Start the service:
-   ```bash
    pm2 start server.js --name c2pa-service
    pm2 startup
    pm2 save

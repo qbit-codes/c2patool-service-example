@@ -1,37 +1,71 @@
-name: Deploy C2PA Demo to GitHub Pages
+name: Deploy to VPS
 
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
-
 jobs:
   deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
       
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
       
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: './client'
+    - name: Run tests (if any)
+      run: npm test || echo "No tests configured"
       
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+    - name: Deploy to VPS
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        key: ${{ secrets.VPS_SSH_KEY }}
+        script: |
+          cd /home/c2pa-service/c2patool-service-example
+          git pull origin main
+          npm install --production
+          
+          # Create .env if it doesn't exist
+          if [ ! -f .env ]; then
+            cp .env.example .env
+            sed -i "s/HOST=localhost/HOST=${{ secrets.VPS_HOST }}/" .env
+          fi
+          
+          # Ensure c2patool is executable
+          chmod +x c2patool
+          
+          # Restart PM2 service
+          pm2 restart c2pa-service || pm2 start server.js --name c2pa-service
+          pm2 save
+          
+          # Update nginx config if changed
+          sudo cp nginx.conf /etc/nginx/sites-available/c2pa-service
+          sudo nginx -t && sudo systemctl reload nginx
+          
+          echo "Deployment completed successfully"
+          
+    - name: Verify deployment
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        key: ${{ secrets.VPS_SSH_KEY }}
+        script: |
+          # Check if service is running
+          pm2 status c2pa-service
+          
+          # Test the service endpoint
+          curl -f http://localhost:8000/version || exit 1
+          
+          echo "Service is running and responding"
