@@ -7,6 +7,9 @@
  * it.
  */
 
+// Load environment variables from .env file
+require('dotenv').config();
+
 var express = require('express');
 const fileUpload = require('express-fileupload');
 const cors = require('cors');
