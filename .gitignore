@@ -1,5 +1,8 @@
 /node_modules
 /uploads
+/signed-images
+/verify-uploads
+/remote-manifests
 .vscode/
 .DS_Store
 /c2patool
