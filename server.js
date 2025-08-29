@@ -22,12 +22,62 @@ const _ = require('lodash');
 const fetch = require('node-fetch');
 const util = require('util');
 const child = require('child_process')
+const axios = require('axios');
+const FormData = require('form-data');
 let exec = util.promisify(child.exec);
 
 const port = process.env.PORT || 8000;
 const host = process.env.HOST || 'localhost';
+const watermarkApiUrl = process.env.WATERMARK_API_URL || 'http://localhost:8000';
 
 var app = express();
+
+// Watermark Service Class
+class WatermarkService {
+    constructor(apiBaseUrl) {
+        this.apiBaseUrl = apiBaseUrl;
+    }
+
+    async embed(imagePath, watermarkText = null) {
+        try {
+            const form = new FormData();
+            form.append('file', fs.createReadStream(imagePath));
+            
+            if (watermarkText) {
+                form.append('wm_text', watermarkText);
+            }
+
+            const response = await axios.post(`${this.apiBaseUrl}/embed`, form, {
+                headers: { ...form.getHeaders() },
+            });
+
+            return response.data;
+        } catch (error) {
+            console.error('Watermark embed error:', error.response?.data || error.message);
+            throw new Error('Failed to add watermark: ' + (error.response?.data?.detail || error.message));
+        }
+    }
+
+    async verify(imagePath, watermarkId, tryRecover = true) {
+        try {
+            const form = new FormData();
+            form.append('file', fs.createReadStream(imagePath));
+            form.append('watermark_id', watermarkId);
+            form.append('try_recover', tryRecover.toString());
+
+            const response = await axios.post(`${this.apiBaseUrl}/verify`, form, {
+                headers: { ...form.getHeaders() },
+            });
+
+            return response.data;
+        } catch (error) {
+            console.error('Watermark verify error:', error.response?.data || error.message);
+            throw new Error('Failed to verify watermark: ' + (error.response?.data?.detail || error.message));
+        }
+    }
+}
+
+const watermarkService = new WatermarkService(watermarkApiUrl);
 
 // serve our web client
 app.use(express.static('client'));
@@ -142,6 +192,8 @@ app.post('/upload', async (req, res) => {
   try {
     let originalFileName = req.query.name;
     let manifestType = req.query.manifestType || 'embedded';
+    let addWatermark = req.query.addWatermark === 'true';
+    let watermarkText = req.query.watermarkText || null;
     
     // Create unique filename for signed image
     const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
@@ -156,11 +208,49 @@ app.post('/upload', async (req, res) => {
     let tempFilePath = `${imageFolder}/${originalFileName}`;
     await fsPromises.appendFile(tempFilePath, Buffer.from(req.body),{flag:'w'});
 
+    let watermarkInfo = null;
+    let filePathToSign = tempFilePath;
+
+    // Add watermark if requested
+    if (addWatermark) {
+      try {
+        console.log(`Adding watermark to ${originalFileName}...`);
+        const watermarkResult = await watermarkService.embed(tempFilePath, watermarkText);
+        watermarkInfo = {
+          watermark_id: watermarkResult.watermark_id,
+          watermark_text: watermarkText,
+          watermark_length: watermarkResult.wm_len
+        };
+        
+        // Use watermarked image for C2PA signing
+        if (watermarkResult.file_url) {
+          // Download watermarked image from API
+          const watermarkedResponse = await axios.get(watermarkResult.file_url, { responseType: 'stream' });
+          const watermarkedFilePath = `${imageFolder}/${baseName}_watermarked_${timestamp}${fileExt}`;
+          const writer = fs.createWriteStream(watermarkedFilePath);
+          watermarkedResponse.data.pipe(writer);
+          
+          await new Promise((resolve, reject) => {
+            writer.on('finish', resolve);
+            writer.on('error', reject);
+          });
+          
+          filePathToSign = watermarkedFilePath;
+        }
+        
+        console.log(`Watermark added successfully: ${watermarkInfo.watermark_id}`);
+      } catch (watermarkError) {
+        console.error('Watermark error:', watermarkError.message);
+        // Continue with C2PA signing without watermark
+        watermarkInfo = { error: watermarkError.message };
+      }
+    }
+
     let result, report;
     
     if (manifestType === 'sidecar') {
       // Generate sidecar manifest in signed folder
-      let command = `./c2patool "${tempFilePath}" -m manifest.json --sidecar -o "${signedFilePath}" -f`;
+      let command = `./c2patool "${filePathToSign}" -m manifest.json --sidecar -o "${signedFilePath}" -f`;
       result = await exec(command);
 
       const signedBaseName = path.basename(uniqueFileName, fileExt);
@@ -191,14 +281,18 @@ app.post('/upload', async (req, res) => {
           sidecarUrl: `http://${host}:${port}/signed-images/${signedBaseName}.c2pa`,
           manifestType: 'sidecar',
           manifestDetails,
+          watermark: watermarkInfo,
           report
         });
       } else {
         throw new Error('Sidecar manifest file not created');
       }
       
-      // Clean up temp file
+      // Clean up temp files
       fs.unlinkSync(tempFilePath);
+      if (filePathToSign !== tempFilePath && fs.existsSync(filePathToSign)) {
+        fs.unlinkSync(filePathToSign);
+      }
     } else if (manifestType === 'remote') {
       // For remote manifests, we need to provide a remote URL where the manifest will be hosted
       const remoteManifestUrl = `http://${host}:${port}/remote-manifests/${uniqueFileName}.c2pa`;
@@ -210,11 +304,11 @@ app.post('/upload', async (req, res) => {
       }
       
       // Use c2patool with --remote flag to embed the remote manifest URL in the image
-      let command = `./c2patool "${tempFilePath}" -m manifest.json --remote "${remoteManifestUrl}" -o "${signedFilePath}" -f`;
+      let command = `./c2patool "${filePathToSign}" -m manifest.json --remote "${remoteManifestUrl}" -o "${signedFilePath}" -f`;
       result = await exec(command);
       
       // Generate the actual manifest file that would be hosted remotely
-      const sidecarCommand = `./c2patool "${tempFilePath}" -m manifest.json --sidecar -o "${remoteFolder}/${uniqueFileName}" -f`;
+      const sidecarCommand = `./c2patool "${filePathToSign}" -m manifest.json --sidecar -o "${remoteFolder}/${uniqueFileName}" -f`;
       await exec(sidecarCommand);
       
       report = JSON.parse(result.stdout);
@@ -241,14 +335,18 @@ app.post('/upload', async (req, res) => {
         remoteManifestUrl: remoteManifestUrl,
         manifestType: 'remote',
         manifestDetails,
+        watermark: watermarkInfo,
         report
       });
       
-      // Clean up temp file
+      // Clean up temp files
       fs.unlinkSync(tempFilePath);
+      if (filePathToSign !== tempFilePath && fs.existsSync(filePathToSign)) {
+        fs.unlinkSync(filePathToSign);
+      }
     } else {
       // Default embedded manifest
-      let command = `./c2patool "${tempFilePath}" -m manifest.json -o "${signedFilePath}" -f`;
+      let command = `./c2patool "${filePathToSign}" -m manifest.json -o "${signedFilePath}" -f`;
       result = await exec(command);
       report = JSON.parse(result.stdout);
       report.manifestLocation = 'Embedded';
@@ -273,11 +371,15 @@ app.post('/upload', async (req, res) => {
         url: `http://${host}:${port}/signed-images/${uniqueFileName}`,
         manifestType: 'embedded',
         manifestDetails,
+        watermark: watermarkInfo,
         report
       });
       
-      // Clean up temp file
+      // Clean up temp files
       fs.unlinkSync(tempFilePath);
+      if (filePathToSign !== tempFilePath && fs.existsSync(filePathToSign)) {
+        fs.unlinkSync(filePathToSign);
+      }
     }
   } catch (err) {
     console.log(err);

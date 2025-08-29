@@ -25,10 +25,10 @@ const embedManifest = document.getElementById('embedManifest');
 const sidecarManifest = document.getElementById('sidecarManifest');
 const remoteManifest = document.getElementById('remoteManifest');
 const manifestStorageInfo = document.getElementById('manifestStorageInfo');
-const sidecarUploadSection = document.getElementById('sidecarUploadSection');
-const uploadSidecarBtn = document.getElementById('uploadSidecarBtn');
-const imageFile = document.getElementById('imageFile');
-const sidecarFile = document.getElementById('sidecarFile');
+const addWatermark = document.getElementById('addWatermark');
+const watermarkOptions = document.getElementById('watermarkOptions');
+const watermarkInfo = document.getElementById('watermarkInfo');
+const watermarkText = document.getElementById('watermarkText');
 
 // Add an image to the gallery
 function addGalleryItem(data) {
@@ -308,6 +308,19 @@ function createVerificationCard(data) {
                             <dt class="text-sm font-medium text-gray-500">Ingredients:</dt>
                             <dd class="text-sm text-gray-900">${details?.ingredients?.length || 0} ingredient(s)</dd>
                         </div>
+                        
+                        ${data.watermark ? `
+                            <div class="sm:col-span-2">
+                                <dt class="text-sm font-medium text-gray-500">Watermark:</dt>
+                                <dd class="text-sm text-gray-900">
+                                    ${data.watermark.error ? 
+                                        `<span class="text-red-600">Failed: ${data.watermark.error}</span>` :
+                                        `<span class="text-purple-600">ID: ${data.watermark.watermark_id}</span>
+                                         ${data.watermark.watermark_text ? `<br><span class="text-xs text-gray-600">Text: "${data.watermark.watermark_text}"</span>` : ''}`
+                                    }
+                                </dd>
+                            </div>
+                        ` : ''}
                     </dl>
                     
                     <!-- Download Section -->
@@ -395,6 +408,22 @@ function updateActionButtons() {
     verifyFileBtn.disabled = !hasFile;
 }
 
+// Function to update watermark options visibility
+function updateWatermarkOptions() {
+    const isChecked = addWatermark.checked;
+    console.log('Watermark checkbox state:', isChecked); // Debug
+    console.log('Watermark options element:', watermarkOptions); // Debug
+    console.log('Watermark info element:', watermarkInfo); // Debug
+    
+    if (isChecked) {
+        watermarkOptions.classList.remove('hidden');
+        watermarkInfo.classList.remove('hidden');
+    } else {
+        watermarkOptions.classList.add('hidden');
+        watermarkInfo.classList.add('hidden');
+    }
+}
+
 // Function to update manifest storage info
 function updateManifestStorageInfo() {
     const manifestType = document.querySelector('input[name="manifestStorage"]:checked').value;
@@ -405,19 +434,16 @@ function updateManifestStorageInfo() {
             color = 'blue';
             title = 'Embedded';
             description = 'Manifest is stored directly within the image file. The file size will increase slightly, but the manifest travels with the image.';
-            sidecarUploadSection.classList.add('hidden');
             break;
         case 'sidecar':
             color = 'green';
             title = 'Sidecar';
             description = 'Manifest is stored in a separate .c2pa file alongside the image. Both files must be kept together.';
-            sidecarUploadSection.classList.remove('hidden');
             break;
         case 'remote':
             color = 'purple';
             title = 'Remote';
             description = 'Manifest is stored in the cloud and referenced by the image. The image file stays smaller, but requires network access to verify.';
-            sidecarUploadSection.classList.add('hidden');
             break;
     }
     
@@ -691,6 +717,10 @@ signFileBtn.addEventListener('click', async () => {
         // Get selected manifest type
         const manifestType = document.querySelector('input[name=\"manifestStorage\"]:checked').value;
         
+        // Get watermark options
+        const shouldAddWatermark = addWatermark.checked;
+        const watermarkTextValue = watermarkText.value.trim();
+        
         // Sign the file
         try {
             // Read the file as ArrayBuffer for signing
@@ -702,6 +732,15 @@ signFileBtn.addEventListener('click', async () => {
             });
 
             let url = `/upload?name=${processedFile.name}&manifestType=${manifestType}`;
+            
+            // Add watermark parameters if watermark is enabled
+            if (shouldAddWatermark) {
+                url += `&addWatermark=true`;
+                if (watermarkTextValue) {
+                    url += `&watermarkText=${encodeURIComponent(watermarkTextValue)}`;
+                }
+            }
+            
             const response = await fetch(url, {
                 method: 'POST',
                 headers: {
@@ -911,91 +950,30 @@ verifyFileBtn.addEventListener('click', async () => {
     }
 });
 
-// Upload Sidecar button event
-uploadSidecarBtn.addEventListener('click', async () => {
-    const imageFileInput = imageFile.files[0];
-    const sidecarFileInput = sidecarFile.files[0];
-    
-    if (!imageFileInput || !sidecarFileInput) {
-        alert('Please select both image and sidecar files');
-        return;
-    }
-    
-    uploadSidecarBtn.disabled = true;
-    uploadSidecarBtn.innerHTML = `
-        <svg class="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        Uploading...
-    `;
-    
-    try {
-        // Clear current results
-        gallery.innerHTML = "";
-        verificationResults.innerHTML = "";
-        
-        const formData = new FormData();
-        formData.append('image', imageFileInput);
-        formData.append('sidecar', sidecarFileInput);
-        
-        const response = await fetch('/upload-with-sidecar', {
-            method: 'POST',
-            body: formData
-        });
-        
-        const result = await response.json();
-        
-        if (response.ok) {
-            // Create file data object
-            const fileData = {
-                name: result.name,
-                file: imageFileInput,
-                url: result.url,
-                report: result.report,
-                manifestType: result.manifestType
-            };
-            
-            processedFile = fileData;
-            
-            // Add to gallery with C2PA badge
-            addGalleryItem(fileData);
-            
-            // Add verification card
-            const verificationCard = createVerificationCard(result);
-            verificationResults.appendChild(verificationCard);
-            
-            // Update action buttons
-            updateActionButtons();
-            
-            // Clear file inputs
-            imageFile.value = '';
-            sidecarFile.value = '';
-            
-        } else {
-            throw new Error(result.error || 'Upload failed');
-        }
-        
-    } catch (err) {
-        console.error('Upload sidecar error:', err);
-        alert('Failed to upload files: ' + err.message);
-    } finally {
-        // Reset button
-        uploadSidecarBtn.disabled = false;
-        uploadSidecarBtn.innerHTML = `
-            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
-            </svg>
-            Upload Files
-        `;
-    }
-});
+
+// Watermark toggle event
+if (addWatermark) {
+    addWatermark.addEventListener('change', updateWatermarkOptions);
+    addWatermark.addEventListener('click', function() {
+        console.log('Watermark checkbox clicked!'); // Debug
+        setTimeout(updateWatermarkOptions, 10); // Small delay to ensure state change
+    });
+    console.log('Added watermark event listener'); // Debug
+} else {
+    console.error('addWatermark element not found'); // Debug
+}
 
 // Manifest storage toggle events
 embedManifest.addEventListener('change', updateManifestStorageInfo);
 sidecarManifest.addEventListener('change', updateManifestStorageInfo);
 remoteManifest.addEventListener('change', updateManifestStorageInfo);
 
-// Initialize manifest storage info on page load
+// Initialize on page load
+if (addWatermark && watermarkOptions && watermarkInfo) {
+    updateWatermarkOptions();
+    console.log('Initialized watermark options'); // Debug
+} else {
+    console.error('Watermark elements not found:', { addWatermark, watermarkOptions, watermarkInfo }); // Debug
+}
 updateManifestStorageInfo();
 
