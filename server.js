@@ -22,6 +22,7 @@ const child = require('child_process')
 let exec = util.promisify(child.exec);
 
 const port = process.env.PORT || 8000;
+const host = process.env.HOST || 'localhost';
 
 var app = express();
 
@@ -100,8 +101,8 @@ app.post('/upload-with-sidecar', async (req, res) => {
       
       res.send({
         name: imageFile.name,
-        url: `http://localhost:${port}/${imageFile.name}`,
-        sidecarUrl: `http://localhost:${port}/${imageFile.name}.c2pa`,
+        url: `http://${host}:${port}/${imageFile.name}`,
+        sidecarUrl: `http://${host}:${port}/${imageFile.name}.c2pa`,
         manifestType: 'sidecar',
         hasManifest: true,
         report
@@ -183,8 +184,8 @@ app.post('/upload', async (req, res) => {
         res.send({
           name: uniqueFileName,
           originalName: originalFileName,
-          url: `http://localhost:${port}/signed-images/${uniqueFileName}`,
-          sidecarUrl: `http://localhost:${port}/signed-images/${signedBaseName}.c2pa`,
+          url: `http://${host}:${port}/signed-images/${uniqueFileName}`,
+          sidecarUrl: `http://${host}:${port}/signed-images/${signedBaseName}.c2pa`,
           manifestType: 'sidecar',
           manifestDetails,
           report
@@ -197,7 +198,7 @@ app.post('/upload', async (req, res) => {
       fs.unlinkSync(tempFilePath);
     } else if (manifestType === 'remote') {
       // For remote manifests, we need to provide a remote URL where the manifest will be hosted
-      const remoteManifestUrl = `http://localhost:${port}/remote-manifests/${uniqueFileName}.c2pa`;
+      const remoteManifestUrl = `http://${host}:${port}/remote-manifests/${uniqueFileName}.c2pa`;
       
       // Create remote-manifests directory if it doesn't exist
       const remoteFolder = 'remote-manifests';
@@ -233,7 +234,7 @@ app.post('/upload', async (req, res) => {
       res.send({
         name: uniqueFileName,
         originalName: originalFileName,
-        url: `http://localhost:${port}/signed-images/${uniqueFileName}`,
+        url: `http://${host}:${port}/signed-images/${uniqueFileName}`,
         remoteManifestUrl: remoteManifestUrl,
         manifestType: 'remote',
         manifestDetails,
@@ -266,7 +267,7 @@ app.post('/upload', async (req, res) => {
       res.send({
         name: uniqueFileName,
         originalName: originalFileName,
-        url: `http://localhost:${port}/signed-images/${uniqueFileName}`,
+        url: `http://${host}:${port}/signed-images/${uniqueFileName}`,
         manifestType: 'embedded',
         manifestDetails,
         report
@@ -360,7 +361,7 @@ app.post('/verify', async (req, res) => {
       res.send({
         name: uniqueVerifyFileName,
         originalName: fileName,
-        url: `http://localhost:${port}/verify-uploads/${uniqueVerifyFileName}`,
+        url: `http://${host}:${port}/verify-uploads/${uniqueVerifyFileName}`,
         manifestType: manifestType,
         hasManifest: true,
         manifestDetails,
@@ -378,7 +379,7 @@ app.post('/verify', async (req, res) => {
       res.send({
         name: uniqueVerifyFileName,
         originalName: fileName,
-        url: `http://localhost:${port}/verify-uploads/${uniqueVerifyFileName}`,
+        url: `http://${host}:${port}/verify-uploads/${uniqueVerifyFileName}`,
         manifestType: 'none',
         hasManifest: false,
         manifestDetails: null,
